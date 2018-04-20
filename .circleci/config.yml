@@ -2,6 +2,8 @@ version: 2
 variables: 
   - &workdir
     /tmp/circleci
+  - &branchignore
+    ignore: [noci, gh-pages]
   - &dockerbuildimage
       - image: circleci/golang
   - &gradleimage
@@ -24,8 +26,7 @@ variables:
     name: Build and Push Service Docker Image
     command: |
       TAG=$DOCKER_TAG
-      echo "Building " $GIT_FOLDER
-      docker build -f ./$GIT_FOLDER/Dockerfile --build-arg port=$SERVICE_PORT --build-arg mongo_connection=mongodb://localhost/$GIT_FOLDER --build-arg VCS_REF=`git rev-parse --short HEAD` --build-arg BUILD_DATE=`date -u +"%Y-%m-%dT%H:%M:%SZ"` -t $REGISTRY_NAMEIMAGE/$DOCKER_IMAGE:$TAG -t $REGISTRY_NAMEIMAGE/$DOCKER_IMAGE:latest .
+      docker build -f ./$GIT_FOLDER/Dockerfile --build-arg port=$SERVICE_PORT --build-arg mongo_connection=mongodb://localhost/$GIT_FOLDER --build-arg VCS_REF=$CIRCLE_SHA1 --build-arg BUILD_DATE=`date -u +"%Y-%m-%dT%H:%M:%SZ"` -t $REGISTRY_NAMEIMAGE/$DOCKER_IMAGE:$TAG -t $REGISTRY_NAMEIMAGE/$DOCKER_IMAGE:latest .
       if [[ ((`echo $CIRCLE_BRANCH | grep -c "master"` > 0))]]; then 
         echo "Push to registry since it's the master branch."
         docker login $REGISTRY_NAME -u $DOCKER_USER -p $DOCKER_PASS
@@ -35,7 +36,6 @@ variables:
       else
         echo "Skip Docker push image since it is not the master branch."
       fi
-
 jobs:
   orderservice:
     working_directory: *workdir
@@ -72,7 +72,6 @@ jobs:
 
     environment:
       DOCKER_IMAGE: pumrp-order
-      DOCKER_TAG: 1.0.0
       SERVICE_PORT: 8080
       GIT_FOLDER: OrderSrvc
 
@@ -121,7 +120,6 @@ jobs:
 
     environment:
       DOCKER_IMAGE: pumrp-quote
-      DOCKER_TAG: 1.0.0
       SERVICE_PORT: 8080
       GIT_FOLDER: QuoteSrvc
 
@@ -170,7 +168,6 @@ jobs:
 
     environment:
       DOCKER_IMAGE: pumrp-shipment
-      DOCKER_TAG: 1.0.0
       SERVICE_PORT: 8080
       GIT_FOLDER: ShipmentSrvc
 
@@ -219,7 +216,6 @@ jobs:
 
     environment:
       DOCKER_IMAGE: pumrp-catalog
-      DOCKER_TAG: 1.0.0
       SERVICE_PORT: 8080
       GIT_FOLDER: CatalogSrvc
 
@@ -264,7 +260,6 @@ jobs:
 
     environment:
       DOCKER_IMAGE: pumrp-dealer
-      DOCKER_TAG: 1.0.0
       GIT_FOLDER: DealerService
 
     steps:
@@ -320,7 +315,6 @@ jobs:
 
     environment:
       DOCKER_IMAGE: pumrp-web
-      DOCKER_TAG: 1.0.0
       GIT_FOLDER: Web
       SERVICE_PORT: 8080
 
@@ -345,31 +339,68 @@ jobs:
             else
               echo "Skip Docker push image since it is not the master branch."
             fi
+
 workflows:
   version: 2
   build-pumrp-in-parallel:
     jobs:
-      - orderservice
+      - orderservice:
+          filters:
+            branches: *branchignore
+      - orderhold:
+          type: approval
+          requires: 
+            - orderservice
       - orderservicedocker:
           requires:
-            - orderservice
-      - quoteservice
+            - orderhold
+      - quoteservice:
+          filters:
+            branches: *branchignore
+      - quotehold:
+          type: approval
+          requires: 
+            - quoteservice
       - quoteservicedocker:
           requires:
-            - quoteservice
-      - shipmentservice
+            - quotehold
+      - shipmentservice:
+          filters:
+            branches: *branchignore
+      - shipmenthold:
+          type: approval
+          requires: 
+            - shipmentservice
       - shipmentservicedocker:
           requires:
-            - shipmentservice
-      - catalogservice
+            - shipmenthold
+      - catalogservice:
+          filters: 
+            branches: *branchignore
+      - cataloghold:
+          type: approval
+          requires: 
+            - catalogservice
       - catalogservicedocker:
           requires:
-            - catalogservice
-      - dealerservice
+            - cataloghold
+      - dealerservice:
+          filters:
+            branches: *branchignore
+      - dealerhold:
+          type: approval
+          requires: 
+            - dealerservice
       - dealerservicedocker:
           requires:
-            - dealerservice
-      - web
+            - dealerhold
+      - web:
+          filters:
+            branches: *branchignore
+      - webhold:
+          type: approval
+          requires: 
+            - web
       - webdocker:
           requires:
-            - web
+            - webhold
